@@ -1,0 +1,10 @@
+# Build outputs
+bin/
+out/
+
+# Config with secrets
+config.properties
+
+# IDE
+.vscode/
+*.class
