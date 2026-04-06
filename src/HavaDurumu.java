@@ -75,19 +75,46 @@ public class HavaDurumu extends JFrame {
     }
 
     private static final String BASE_URL = "https://api.openweathermap.org/data/2.5/weather";
-    private static final String[] SEHIRLER = {
-        "Adana", "Ad\u0131yaman", "Afyonkarahisar", "A\u011Fr\u0131", "Aksaray", "Amasya", "Ankara", "Antalya", "Ardahan", "Artvin",
-        "Ayd\u0131n", "Bal\u0131kesir", "Bart\u0131n", "Batman", "Bayburt", "Bilecik", "Bing\u00F6l", "Bitlis", "Bolu", "Burdur",
-        "Bursa", "\u00C7anakkale", "\u00C7ank\u0131r\u0131", "\u00C7orum", "Denizli", "Diyarbak\u0131r", "D\u00FCzce", "Edirne", "Elaz\u0131\u011F", "Erzincan",
-        "Erzurum", "Eski\u015Fehir", "Gaziantep", "Giresun", "G\u00FCm\u00FC\u015Fhane", "Hakk\u00E2ri", "Hatay", "I\u011Fd\u0131r", "Isparta", "Istanbul",
-        "\u0130zmir", "Kahramanmara\u015F", "Karab\u00FCk", "Karaman", "Kars", "Kastamonu", "Kayseri", "K\u0131r\u0131kkale", "K\u0131rklareli", "K\u0131r\u015Fehir",
-        "Kilis", "Kocaeli", "Konya", "K\u00FCtahya", "Malatya", "Manisa", "Mardin", "Mersin", "Mu\u011Fla", "Mu\u015F",
-        "Nev\u015Fehir", "Ni\u011Fde", "Ordu", "Osmaniye", "Rize", "Sakarya", "Samsun", "Siirt", "Sinop", "Sivas",
-        "\u015E\u0131rnak", "Tekirda\u011F", "Tokat", "Trabzon", "Tunceli", "U\u015Fak", "Van", "Yalova", "Yozgat", "Zonguldak",
-        "London", "Paris", "Berlin", "Rome", "Madrid", "New York", "Tokyo", "Moscow", "Dubai", "Amsterdam",
-        "Los Angeles", "Chicago", "San Francisco", "Sydney", "Beijing", "Shanghai", "Seoul", "Bangkok", "Singapore",
-        "Cairo", "Lagos", "Toronto", "Vancouver", "Mexico City", "Buenos Aires", "Rio de Janeiro", "Mumbai", "Delhi"
-    };
+    private static final Locale TR_LOCALE = Locale.of("tr");
+    private static final String[] SEHIRLER;
+    private static final String[] SEHIRLER_LOWER;
+    static {
+        List<String> list = new ArrayList<>();
+        // sehirler.txt dosyasini oku
+        String[] paths = { "sehirler.txt", System.getProperty("user.dir") + File.separator + "sehirler.txt" };
+        try {
+            File classDir = new File(HavaDurumu.class.getProtectionDomain().getCodeSource().getLocation().toURI());
+            if (classDir.isDirectory()) {
+                paths = new String[] { paths[0], paths[1],
+                    classDir.getParent() + File.separator + "sehirler.txt",
+                    classDir.getParentFile().getParent() + File.separator + "sehirler.txt" };
+            }
+        } catch (Exception ignored) {}
+        boolean loaded = false;
+        for (String p : paths) {
+            File f = new File(p);
+            if (f.exists()) {
+                try (var br = new java.io.BufferedReader(new InputStreamReader(new FileInputStream(f), StandardCharsets.UTF_8))) {
+                    String line;
+                    while ((line = br.readLine()) != null) {
+                        line = line.trim();
+                        if (!line.isEmpty()) list.add(line);
+                    }
+                    loaded = true;
+                    break;
+                } catch (IOException ignored) {}
+            }
+        }
+        if (!loaded) {
+            // Fallback: en azindan bazi sehirler
+            String[] fallback = {"Istanbul","Ankara","Izmir","London","Paris","Berlin","New York","Tokyo"};
+            for (String s : fallback) list.add(s);
+        }
+        SEHIRLER = list.toArray(new String[0]);
+        SEHIRLER_LOWER = new String[SEHIRLER.length];
+        for (int i = 0; i < SEHIRLER.length; i++)
+            SEHIRLER_LOWER[i] = SEHIRLER[i].toLowerCase(TR_LOCALE);
+    }
 
     // ========== DYNAMIC COLORS ==========
     private Color bgTop = new Color(15, 32, 65);
@@ -105,6 +132,8 @@ public class HavaDurumu extends JFrame {
     private JLabel nemLabel, ruzgarLabel, basincLabel, gorunurlukLabel;
     private JLabel hissedilenLabel, sehirBilgiLabel, tarihLabel, minMaxLabel;
     private JLabel sunriseLabel, sunsetLabel, moonLabel, uvLabel;
+    private JLabel yagmurLabel, aqiLabel, ruzgarYonLabel, yarinLabel;
+    private JPanel detayPanel2;
     private JPanel kartPanel, detayPanel, extraPanel, anaPanel, titlePanel;
     private JButton araButton;
     private boolean yukleniyor = false;
@@ -643,7 +672,7 @@ public class HavaDurumu extends JFrame {
         sIcon.setFont(new Font("Segoe UI Emoji", Font.PLAIN, 18));
         searchBar.add(sIcon, BorderLayout.WEST);
 
-        sehirField = new JTextField("Istanbul");
+        sehirField = new JTextField();
         sehirField.setFont(new Font("Segoe UI", Font.PLAIN, 16));
         sehirField.setForeground(TEXT_PRIMARY);
         sehirField.setCaretColor(new Color(100, 200, 255));
@@ -683,15 +712,16 @@ public class HavaDurumu extends JFrame {
         araButton.setPreferredSize(new Dimension(78, 36));
         searchBar.add(araButton, BorderLayout.EAST);
 
-        // City autocomplete popup - glass style matching search bar
-        JPopupMenu suggestPopup = new JPopupMenu() {
+        // City autocomplete popup - overlay panel in layered pane
+        JPanel suggestPanel = new JPanel() {
             @Override protected void paintComponent(Graphics g) {
                 Graphics2D g2 = (Graphics2D) g.create();
                 g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
                 int w = getWidth(), h = getHeight();
-                g2.setColor(GLASS_BG);
+                // Solid dark background so content behind doesn't bleed through
+                g2.setColor(new Color(18, 30, 55, 240));
                 g2.fillRoundRect(0, 0, w, h, 18, 18);
-                g2.setPaint(new GradientPaint(0, 0, new Color(255,255,255,30), 0, h * 0.5f, new Color(255,255,255,0)));
+                g2.setPaint(new GradientPaint(0, 0, new Color(255,255,255,22), 0, h * 0.4f, new Color(255,255,255,0)));
                 g2.fillRoundRect(0, 0, w, h / 2, 18, 18);
                 g2.setColor(GLASS_BORDER);
                 g2.setStroke(new BasicStroke(1f));
@@ -699,12 +729,45 @@ public class HavaDurumu extends JFrame {
                 g2.dispose();
             }
         };
-        suggestPopup.setFocusable(false);
-        suggestPopup.setOpaque(false);
-        suggestPopup.setBorder(BorderFactory.createEmptyBorder(6, 0, 6, 0));
+        suggestPanel.setOpaque(true);
+        suggestPanel.setLayout(new BoxLayout(suggestPanel, BoxLayout.Y_AXIS));
+        suggestPanel.setBorder(BorderFactory.createEmptyBorder(6, 6, 6, 6));
+        suggestPanel.setVisible(false);
+        getRootPane().getLayeredPane().add(suggestPanel, JLayeredPane.POPUP_LAYER);
+        final int[] selectedIdx = {-1}; // keyboard navigation index
+
+        // Keyboard navigation: arrow keys + enter on suggestPanel
+        sehirField.addKeyListener(new java.awt.event.KeyAdapter() {
+            @Override public void keyPressed(java.awt.event.KeyEvent e) {
+                if (!suggestPanel.isVisible() || suggestPanel.getComponentCount() == 0) return;
+                int cnt = suggestPanel.getComponentCount();
+                if (e.getKeyCode() == java.awt.event.KeyEvent.VK_DOWN) {
+                    e.consume();
+                    selectedIdx[0] = Math.min(selectedIdx[0] + 1, cnt - 1);
+                    highlightSuggestItem(suggestPanel, selectedIdx[0]);
+                } else if (e.getKeyCode() == java.awt.event.KeyEvent.VK_UP) {
+                    e.consume();
+                    selectedIdx[0] = Math.max(selectedIdx[0] - 1, 0);
+                    highlightSuggestItem(suggestPanel, selectedIdx[0]);
+                } else if (e.getKeyCode() == java.awt.event.KeyEvent.VK_ENTER && selectedIdx[0] >= 0) {
+                    e.consume();
+                    Component c = suggestPanel.getComponent(selectedIdx[0]);
+                    if (c instanceof JLabel lbl) {
+                        // Simulate click
+                        for (var ml : lbl.getMouseListeners()) {
+                            ml.mousePressed(new MouseEvent(lbl, MouseEvent.MOUSE_PRESSED, System.currentTimeMillis(), 0, 0, 0, 1, false));
+                        }
+                    }
+                    selectedIdx[0] = -1;
+                } else if (e.getKeyCode() == java.awt.event.KeyEvent.VK_ESCAPE) {
+                    e.consume();
+                    suggestPanel.setVisible(false);
+                    selectedIdx[0] = -1;
+                }
+            }
+        });
 
         // Instant static + async API suggestions
-        Timer[] suggestTimer = {null};
         sehirField.getDocument().addDocumentListener(new DocumentListener() {
             public void insertUpdate(DocumentEvent e) { scheduleSearch(); }
             public void removeUpdate(DocumentEvent e) { scheduleSearch(); }
@@ -712,39 +775,23 @@ public class HavaDurumu extends JFrame {
             private void scheduleSearch() {
                 SwingUtilities.invokeLater(() -> {
                     String text = sehirField.getText().trim();
-                    if (text.length() < 1) { suggestPopup.setVisible(false); return; }
-                    // Instant static results
-                    String lower = text.toLowerCase(Locale.of("tr"));
+                    if (text.length() < 1) { suggestPanel.setVisible(false); selectedIdx[0] = -1; return; }
+                    String lower = text.toLowerCase(TR_LOCALE);
                     List<String> staticResults = new ArrayList<>();
-                    for (String s : SEHIRLER) {
-                        if (s.toLowerCase(Locale.of("tr")).startsWith(lower) && staticResults.size() < 6)
-                            staticResults.add(s + "|" + s);
+                    for (int i = 0; i < SEHIRLER.length && staticResults.size() < 8; i++) {
+                        if (SEHIRLER_LOWER[i].startsWith(lower))
+                            staticResults.add(SEHIRLER[i] + "|" + SEHIRLER[i]);
                     }
-                    if (!staticResults.isEmpty()) showGeoSuggestions(staticResults, suggestPopup);
-                    // Async API call for broader results (debounced)
-                    if (suggestTimer[0] != null && suggestTimer[0].isRunning()) suggestTimer[0].stop();
-                    if (text.length() >= 2) {
-                        suggestTimer[0] = new Timer(150, ev -> {
-                            suggestTimer[0].stop();
-                            new Thread(() -> {
-                                try {
-                                    String enc = URLEncoder.encode(text, StandardCharsets.UTF_8);
-                                    String geoUrl = "https://api.openweathermap.org/geo/1.0/direct?q=" + enc + "&limit=6&appid=" + API_KEY;
-                                    HttpURLConnection conn = (HttpURLConnection) new URI(geoUrl).toURL().openConnection();
-                                    conn.setRequestMethod("GET");
-                                    conn.setConnectTimeout(3000); conn.setReadTimeout(3000);
-                                    if (conn.getResponseCode() == 200) {
-                                        String json = readStream(conn.getInputStream());
-                                        List<String> results = parseGeoResults(json);
-                                        SwingUtilities.invokeLater(() -> showGeoSuggestions(results, suggestPopup));
-                                    }
-                                    conn.disconnect();
-                                } catch (Exception ignored) {}
-                            }).start();
-                        });
-                        suggestTimer[0].setRepeats(false);
-                        suggestTimer[0].start();
+                    if (!staticResults.isEmpty()) showGeoSuggestions(staticResults, suggestPanel, sehirField);
+                    // Also search with contains for broader results
+                    if (staticResults.isEmpty() && text.length() >= 2) {
+                        for (int i = 0; i < SEHIRLER.length && staticResults.size() < 8; i++) {
+                            if (SEHIRLER_LOWER[i].contains(lower))
+                                staticResults.add(SEHIRLER[i] + "|" + SEHIRLER[i]);
+                        }
+                        if (!staticResults.isEmpty()) showGeoSuggestions(staticResults, suggestPanel, sehirField);
                     }
+                    if (staticResults.isEmpty()) { suggestPanel.setVisible(false); selectedIdx[0] = -1; }
                 });
             }
         });
@@ -756,11 +803,13 @@ public class HavaDurumu extends JFrame {
         kartPanel = animatedGlassPanel();
         kartPanel.setLayout(new BoxLayout(kartPanel, BoxLayout.Y_AXIS));
         kartPanel.setBorder(BorderFactory.createEmptyBorder(20, 20, 18, 20));
-        kartPanel.setMaximumSize(new Dimension(420, 310));
+        kartPanel.setMaximumSize(new Dimension(420, 320));
         kartPanel.setAlignmentX(Component.CENTER_ALIGNMENT);
         kartPanel.setVisible(false);
 
         sehirBilgiLabel = styledLabel("", 15, Font.BOLD, TEXT_PRIMARY);
+        sehirBilgiLabel.setFont(new Font("Segoe UI Emoji", Font.BOLD, 15));
+        sehirBilgiLabel.setHorizontalAlignment(SwingConstants.CENTER);
         tarihLabel = styledLabel("", 12, Font.PLAIN, TEXT_SECONDARY);
         durumEmoji = glowEmojiLabel("", 72);
         sicaklikLabel = styledLabel("", 56, Font.BOLD, TEXT_PRIMARY);
@@ -794,6 +843,22 @@ public class HavaDurumu extends JFrame {
         anaPanel.add(detayPanel);
         anaPanel.add(Box.createVerticalStrut(12));
 
+        // ===== DETAIL GRID 2 (Yagis, AQI, Ruzgar Yonu, Yarin) =====
+        detayPanel2 = animatedGlassPanel();
+        detayPanel2.setLayout(new GridLayout(2, 2, 10, 10));
+        detayPanel2.setBorder(BorderFactory.createEmptyBorder(14, 14, 14, 14));
+        detayPanel2.setMaximumSize(new Dimension(420, 160));
+        detayPanel2.setAlignmentX(Component.CENTER_ALIGNMENT);
+        detayPanel2.setVisible(false);
+
+        yagmurLabel = addTile(detayPanel2, "\u2614", "Yagis Ihtimali", "-");
+        aqiLabel = addTile(detayPanel2, "\uD83C\uDF43", "Hava Kalitesi", "-");
+        ruzgarYonLabel = addTile(detayPanel2, "\uD83E\uDDED", "Ruzgar Yonu", "-");
+        yarinLabel = addTile(detayPanel2, "\uD83D\uDD2E", "Yarin", "-");
+
+        anaPanel.add(detayPanel2);
+        anaPanel.add(Box.createVerticalStrut(12));
+
         // ===== EXTRA INFO (sunrise/sunset/moon/uv) =====
         extraPanel = animatedGlassPanel();
         extraPanel.setLayout(new GridLayout(1, 4, 8, 0));
@@ -805,7 +870,7 @@ public class HavaDurumu extends JFrame {
         sunriseLabel = addTile(extraPanel, "\uD83C\uDF05", "Gun Dogumu", "-");
         sunsetLabel = addTile(extraPanel, "\uD83C\uDF07", "Gun Batimi", "-");
         moonLabel = addTile(extraPanel, "\uD83C\uDF15", "Ay Evresi", "-");
-        uvLabel = addTile(extraPanel, "\u2600\uFE0F", "Gunduz", "-");
+        uvLabel = addTile(extraPanel, "\u2600\uFE0F", "UV Endeksi", "-");
 
         anaPanel.add(extraPanel);
         anaPanel.add(Box.createVerticalGlue());
@@ -836,7 +901,7 @@ public class HavaDurumu extends JFrame {
         scrollPane.getVerticalScrollBar().setPreferredSize(new Dimension(0, 0));
         setContentPane(scrollPane);
 
-        ActionListener act = e -> fetchWeather();
+        ActionListener act = e -> { if (selectedIdx[0] < 0) { suggestPanel.setVisible(false); fetchWeather(); } };
         araButton.addActionListener(act);
         sehirField.addActionListener(act);
     }
@@ -946,6 +1011,10 @@ public class HavaDurumu extends JFrame {
             case "\uD83C\uDF05" -> drawHorizonSunE(g2, cx, cy, r, new Color(255, 183, 77), new Color(255, 213, 79));
             case "\uD83C\uDF07" -> drawHorizonSunE(g2, cx, cy, r, new Color(255, 112, 67), new Color(255, 152, 0));
             case "\u26A0\uFE0F", "\u26A0" -> drawWarningE(g2, cx, cy, r);
+            case "\u2614\uFE0F", "\u2614" -> drawUmbrellaE(g2, cx, cy, r);
+            case "\uD83C\uDF43" -> drawLeafE(g2, cx, cy, r);
+            case "\uD83E\uDDED" -> drawCompassE(g2, cx, cy, r);
+            case "\uD83D\uDD2E" -> drawCrystalBallE(g2, cx, cy, r);
             default -> {
                 if (emoji.length() == 2 && emoji.charAt(0) == '\uD83C') {
                     int lo = emoji.charAt(1);
@@ -1117,6 +1186,131 @@ public class HavaDurumu extends JFrame {
         g2.drawString("!", cx - fm.stringWidth("!") / 2, cy + tr / 4);
     }
 
+    private void drawUmbrellaE(Graphics2D g2, int cx, int cy, int r) {
+        int ur = r * 2 / 3;
+        // Umbrella dome
+        g2.setColor(new Color(100, 149, 237));
+        g2.fillArc(cx - ur, cy - ur, ur * 2, ur * 2, 0, 180);
+        // Dome edge scallops
+        g2.setColor(new Color(70, 120, 210));
+        int scallops = 5;
+        for (int i = 0; i < scallops; i++) {
+            int sx = cx - ur + i * ur * 2 / scallops;
+            g2.fillArc(sx, cy - ur / 6, ur * 2 / scallops, ur / 3, 0, -180);
+        }
+        // Handle
+        g2.setStroke(new BasicStroke(Math.max(2f, r / 6f), BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+        g2.setColor(new Color(180, 140, 100));
+        g2.drawLine(cx, cy, cx, cy + ur * 2 / 3);
+        g2.drawArc(cx - ur / 5, cy + ur / 3 + ur / 6, ur * 2 / 5, ur / 3, 0, -180);
+        // Rain drops
+        g2.setColor(new Color(100, 181, 246, 180));
+        g2.setStroke(new BasicStroke(Math.max(1.2f, r / 10f), BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+        g2.drawLine(cx - ur + 4, cy + ur / 4, cx - ur + 2, cy + ur / 2);
+        g2.drawLine(cx + ur - 4, cy + ur / 6, cx + ur - 6, cy + ur / 3 + 4);
+        g2.drawLine(cx - ur / 3, cy + ur / 2, cx - ur / 3 - 2, cy + ur * 3 / 4);
+    }
+
+    private void drawLeafE(Graphics2D g2, int cx, int cy, int r) {
+        int lr = r * 2 / 3;
+        // Leaf body
+        GeneralPath leaf = new GeneralPath();
+        leaf.moveTo(cx, cy - lr);
+        leaf.curveTo(cx + lr * 1.2, cy - lr * 0.5, cx + lr * 1.2, cy + lr * 0.5, cx, cy + lr);
+        leaf.curveTo(cx - lr * 1.2, cy + lr * 0.5, cx - lr * 1.2, cy - lr * 0.5, cx, cy - lr);
+        leaf.closePath();
+        // Gradient fill
+        GradientPaint gp = new GradientPaint(cx - lr, cy - lr, new Color(102, 187, 106), cx + lr, cy + lr, new Color(56, 142, 60));
+        g2.setPaint(gp);
+        g2.fill(leaf);
+        // Central vein
+        g2.setColor(new Color(46, 125, 50));
+        g2.setStroke(new BasicStroke(Math.max(1.2f, r / 9f), BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+        g2.drawLine(cx, cy - lr + 3, cx, cy + lr - 3);
+        // Side veins
+        g2.setStroke(new BasicStroke(Math.max(0.8f, r / 12f), BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+        for (int i = -2; i <= 2; i++) {
+            if (i == 0) continue;
+            int vy = cy + i * lr / 3;
+            int sign = i > 0 ? 1 : -1;
+            g2.draw(new QuadCurve2D.Float(cx, vy, cx + sign * lr / 4, vy - sign * lr / 8, cx + sign * lr / 2, vy - sign * lr / 5));
+            g2.draw(new QuadCurve2D.Float(cx, vy, cx - sign * lr / 4, vy - sign * lr / 8, cx - sign * lr / 2, vy - sign * lr / 5));
+        }
+    }
+
+    private void drawCompassE(Graphics2D g2, int cx, int cy, int r) {
+        int cr = r * 2 / 3;
+        // Outer ring
+        g2.setColor(new Color(160, 140, 120));
+        g2.setStroke(new BasicStroke(Math.max(2.5f, r / 5f)));
+        g2.drawOval(cx - cr, cy - cr, cr * 2, cr * 2);
+        // Inner fill
+        g2.setColor(new Color(245, 240, 230));
+        g2.fillOval(cx - cr + 3, cy - cr + 3, cr * 2 - 6, cr * 2 - 6);
+        // Tick marks
+        g2.setColor(new Color(100, 90, 80));
+        g2.setStroke(new BasicStroke(Math.max(1f, r / 12f)));
+        for (int i = 0; i < 8; i++) {
+            double a = Math.PI * 2 * i / 8;
+            float x1 = cx + (float)(Math.cos(a) * (cr - 5));
+            float y1 = cy - (float)(Math.sin(a) * (cr - 5));
+            float x2 = cx + (float)(Math.cos(a) * (cr - 8));
+            float y2 = cy - (float)(Math.sin(a) * (cr - 8));
+            g2.draw(new Line2D.Float(x1, y1, x2, y2));
+        }
+        // North arrow (red)
+        GeneralPath north = new GeneralPath();
+        north.moveTo(cx, cy - cr + 6);
+        north.lineTo(cx - cr / 4, cy);
+        north.lineTo(cx + cr / 4, cy);
+        north.closePath();
+        g2.setColor(new Color(211, 47, 47));
+        g2.fill(north);
+        // South arrow (gray)
+        GeneralPath south = new GeneralPath();
+        south.moveTo(cx, cy + cr - 6);
+        south.lineTo(cx - cr / 4, cy);
+        south.lineTo(cx + cr / 4, cy);
+        south.closePath();
+        g2.setColor(new Color(180, 180, 190));
+        g2.fill(south);
+        // Center dot
+        g2.setColor(new Color(60, 60, 60));
+        g2.fillOval(cx - 3, cy - 3, 6, 6);
+        g2.setColor(new Color(255, 215, 0));
+        g2.fillOval(cx - 2, cy - 2, 4, 4);
+    }
+
+    private void drawCrystalBallE(Graphics2D g2, int cx, int cy, int r) {
+        int br = r * 2 / 3;
+        // Outer glow
+        g2.setColor(new Color(138, 100, 220, 25));
+        g2.fillOval(cx - br - 6, cy - br - 6, br * 2 + 12, br * 2 + 12);
+        // Ball with gradient
+        RadialGradientPaint ballP = new RadialGradientPaint(
+            new Point2D.Float(cx - br / 3f, cy - br / 3f), br * 1.6f,
+            new float[]{0f, 0.4f, 0.8f, 1f},
+            new Color[]{new Color(220, 200, 255, 220), new Color(160, 120, 240, 200), new Color(100, 60, 200, 180), new Color(50, 20, 120, 160)}
+        );
+        g2.setPaint(ballP);
+        g2.fillOval(cx - br, cy - br, br * 2, br * 2);
+        // Glass highlight
+        g2.setColor(new Color(255, 255, 255, 100));
+        g2.fillOval(cx - br / 3, cy - br * 2 / 3, (int)(br * 0.5), (int)(br * 0.35));
+        // Sparkles inside
+        g2.setColor(new Color(255, 255, 220, 180));
+        float sparkle = (float)(Math.sin(System.currentTimeMillis() * 0.003) * 0.5 + 0.5);
+        g2.fillOval(cx - br / 4, cy + br / 8, (int)(3 * sparkle + 1), (int)(3 * sparkle + 1));
+        g2.fillOval(cx + br / 5, cy - br / 5, 3, 3);
+        g2.fillOval(cx - br / 6, cy + br / 3, 2, 2);
+        g2.fillOval(cx + br / 8, cy + br / 6, 2, 2);
+        // Base stand
+        g2.setColor(new Color(120, 100, 80));
+        g2.fillRoundRect(cx - br * 2 / 3, cy + br - 1, br * 4 / 3, br / 4, 6, 6);
+        g2.setColor(new Color(100, 80, 60));
+        g2.fillRoundRect(cx - br / 2, cy + br + br / 6, br, br / 5, 4, 4);
+    }
+
     private void drawMoonPhaseE(Graphics2D g2, int cx, int cy, int r, int phase) {
         int mr = r * 2 / 3;
         g2.setColor(new Color(55, 60, 75)); g2.fillOval(cx - mr, cy - mr, mr * 2, mr * 2);
@@ -1181,7 +1375,7 @@ public class HavaDurumu extends JFrame {
         animTimer.addActionListener(e -> {
             cardAlpha += 0.06f;
             if (cardAlpha >= 1f) { cardAlpha = 1f; animTimer.stop(); }
-            kartPanel.repaint(); detayPanel.repaint(); extraPanel.repaint();
+            kartPanel.repaint(); detayPanel.repaint(); detayPanel2.repaint(); extraPanel.repaint();
         });
         animTimer.start();
     }
@@ -1223,21 +1417,46 @@ public class HavaDurumu extends JFrame {
         return results;
     }
 
-    private void showGeoSuggestions(List<String> results, JPopupMenu suggestPopup) {
-        suggestPopup.removeAll();
-        if (results.isEmpty()) { suggestPopup.setVisible(false); return; }
+    private void highlightSuggestItem(JPanel panel, int idx) {
+        for (int i = 0; i < panel.getComponentCount(); i++) {
+            Component c = panel.getComponent(i);
+            if (c instanceof JLabel lbl) {
+                lbl.putClientProperty("kbSelected", i == idx);
+                lbl.repaint();
+            }
+        }
+    }
+
+private void showGeoSuggestions(List<String> results, JPanel suggestPanel, JTextField anchor) {
+        suggestPanel.removeAll();
+        // Reset any keyboard selection from previous results
+        if (results.isEmpty()) { suggestPanel.setVisible(false); return; }
+        int itemH = 36;
         int count = 0;
+        Color hoverBg = new Color(255, 255, 255, 25);
         for (String r : results) {
             String[] parts = r.split("\\|", 2);
             String display = parts[0];
             String cityName = parts.length > 1 ? parts[1] : display;
-            JMenuItem item = new JMenuItem(display) {
+            JLabel item = new JLabel(display) {
+                boolean hovered = false;
+                {
+                    addMouseListener(new MouseAdapter() {
+                        public void mouseEntered(MouseEvent e) { hovered = true; repaint(); }
+                        public void mouseExited(MouseEvent e) { hovered = false; repaint(); }
+                        public void mousePressed(MouseEvent e) {
+                            sehirField.setText(cityName);
+                            suggestPanel.setVisible(false);
+                        }
+                    });
+                }
                 @Override protected void paintComponent(Graphics g) {
                     Graphics2D g2 = (Graphics2D) g.create();
                     g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                    if (getModel().isArmed()) {
-                        g2.setColor(new Color(255, 255, 255, 25));
-                        g2.fillRoundRect(4, 0, getWidth() - 8, getHeight(), 10, 10);
+                    boolean kbSel = Boolean.TRUE.equals(getClientProperty("kbSelected"));
+                    if (hovered || kbSel) {
+                        g2.setColor(hoverBg);
+                        g2.fillRoundRect(2, 2, getWidth() - 4, getHeight() - 4, 10, 10);
                     }
                     g2.setColor(getForeground());
                     g2.setFont(getFont());
@@ -1249,19 +1468,26 @@ public class HavaDurumu extends JFrame {
             item.setFont(new Font("Segoe UI", Font.PLAIN, 14));
             item.setForeground(TEXT_PRIMARY);
             item.setOpaque(false);
-            item.setContentAreaFilled(false);
-            item.setBorder(BorderFactory.createEmptyBorder(8, 14, 8, 14));
+            item.setPreferredSize(new Dimension(anchor.getWidth() - 12, itemH));
+            item.setMaximumSize(new Dimension(Integer.MAX_VALUE, itemH));
             item.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-            item.addActionListener(ev -> { sehirField.setText(cityName); suggestPopup.setVisible(false); });
-            suggestPopup.add(item);
+            suggestPanel.add(item);
             count++;
         }
         if (count > 0) {
-            suggestPopup.show(sehirField, 0, sehirField.getHeight() + 12);
-            suggestPopup.setPopupSize(sehirField.getWidth(), count * 36);
-            sehirField.requestFocusInWindow();
+            JLayeredPane lp = getRootPane().getLayeredPane();
+            // Position below the searchBar (parent of anchor), not anchor itself
+            java.awt.Container bar = anchor.getParent();
+            java.awt.Point loc = SwingUtilities.convertPoint(bar, 0, bar.getHeight(), lp);
+            int popupW = bar.getWidth();
+            int popupH = count * itemH + 12;
+            suggestPanel.setBounds(loc.x, loc.y + 4, popupW, popupH);
+            suggestPanel.revalidate();
+            suggestPanel.repaint();
+            suggestPanel.setVisible(true);
         }
     }
+    
     // ==================== API ====================
     private void fetchWeather() {
         String city = sehirField.getText().trim();
@@ -1283,7 +1509,79 @@ public class HavaDurumu extends JFrame {
                 int code = conn.getResponseCode();
                 if (code == 200) {
                     String json = readStream(conn.getInputStream());
-                    SwingUtilities.invokeLater(() -> parseAndShow(json));
+                    // Koordinatlari al
+                    double lat = pd(json, "\"lat\":");
+                    double lon = pd(json, "\"lon\":");
+
+                    // UV endeksi
+                    double uvIdx = -1;
+                    try {
+                        String uvUrlStr = "https://api.openweathermap.org/data/2.5/uvi?lat=" + lat + "&lon=" + lon + "&appid=" + API_KEY;
+                        HttpURLConnection uvConn = (HttpURLConnection) new URI(uvUrlStr).toURL().openConnection();
+                        uvConn.setRequestMethod("GET");
+                        uvConn.setConnectTimeout(5000); uvConn.setReadTimeout(5000);
+                        if (uvConn.getResponseCode() == 200) {
+                            String uvJson = readStream(uvConn.getInputStream());
+                            uvIdx = pd(uvJson, "\"value\":");
+                        }
+                        uvConn.disconnect();
+                    } catch (Exception ignored) {}
+
+                    // AQI (Hava Kalitesi)
+                    int aqiVal = -1;
+                    try {
+                        String aqiUrlStr = "https://api.openweathermap.org/data/2.5/air_pollution?lat=" + lat + "&lon=" + lon + "&appid=" + API_KEY;
+                        HttpURLConnection aqiConn = (HttpURLConnection) new URI(aqiUrlStr).toURL().openConnection();
+                        aqiConn.setRequestMethod("GET");
+                        aqiConn.setConnectTimeout(5000); aqiConn.setReadTimeout(5000);
+                        if (aqiConn.getResponseCode() == 200) {
+                            String aqiJson = readStream(aqiConn.getInputStream());
+                            aqiVal = (int) pd(aqiJson, "\"aqi\":");
+                        }
+                        aqiConn.disconnect();
+                    } catch (Exception ignored) {}
+
+                    // Forecast (Yagis ihtimali + Yarin)
+                    int rainP = -1;
+                    String tmrwDesc = null;
+                    double tmrwTemp = 0;
+                    try {
+                        String fcUrlStr = "https://api.openweathermap.org/data/2.5/forecast?lat=" + lat + "&lon=" + lon + "&appid=" + API_KEY + "&units=metric&lang=tr&cnt=16";
+                        HttpURLConnection fcConn = (HttpURLConnection) new URI(fcUrlStr).toURL().openConnection();
+                        fcConn.setRequestMethod("GET");
+                        fcConn.setConnectTimeout(5000); fcConn.setReadTimeout(5000);
+                        if (fcConn.getResponseCode() == 200) {
+                            String fcJson = readStream(fcConn.getInputStream());
+                            // Ilk kayittaki pop = yagis ihtimali
+                            rainP = (int) Math.round(pd(fcJson, "\"pop\":") * 100);
+                            // Yarin (~8. kayit = 24 saat sonra, 3 saatlik araliklarla)
+                            int listIdx = fcJson.indexOf("\"list\":");
+                            if (listIdx >= 0) {
+                                String rest = fcJson.substring(listIdx);
+                                int searchFrom = 0;
+                                int cnt = 0;
+                                for (int ci = 0; ci < 8; ci++) {
+                                    int next = rest.indexOf("\"dt\":", searchFrom + 1);
+                                    if (next < 0) break;
+                                    searchFrom = next;
+                                    cnt++;
+                                }
+                                if (cnt >= 7) {
+                                    String tmrwPart = rest.substring(searchFrom);
+                                    tmrwTemp = pd(tmrwPart, "\"temp\":");
+                                    tmrwDesc = ps(tmrwPart, "\"description\":\"");
+                                }
+                            }
+                        }
+                        fcConn.disconnect();
+                    } catch (Exception ignored) {}
+
+                    final double fuvi = uvIdx;
+                    final int fAqi = aqiVal;
+                    final int fRain = rainP;
+                    final String fTmrwDesc = tmrwDesc;
+                    final double fTmrwTemp = tmrwTemp;
+                    SwingUtilities.invokeLater(() -> parseAndShow(json, fuvi, fAqi, fRain, fTmrwDesc, fTmrwTemp));
                 } else {
                     String err = ""; try { err = readStream(conn.getErrorStream()); } catch (Exception ignored) {}
                     String msg = ps(err, "\"message\":\"");
@@ -1311,7 +1609,7 @@ public class HavaDurumu extends JFrame {
     }
 
     // ==================== PARSE & DISPLAY ====================
-    private void parseAndShow(String json) {
+    private void parseAndShow(String json, double uvIndex, int aqiValue, int rainProb, String tomorrowDesc, double tomorrowTemp) {
         try {
             double temp = pd(json,"\"temp\":"), feelsLike = pd(json,"\"feels_like\":");
             double tMin = pd(json,"\"temp_min\":"), tMax = pd(json,"\"temp_max\":");
@@ -1333,11 +1631,13 @@ public class HavaDurumu extends JFrame {
             String emoji = weatherEmoji(wMain, night);
 
             titlePanel.setVisible(false);
-            kartPanel.setVisible(true); detayPanel.setVisible(true); extraPanel.setVisible(true);
+            kartPanel.setVisible(true); detayPanel.setVisible(true); detayPanel2.setVisible(true); extraPanel.setVisible(true);
             animateCards();
 
-            sehirBilgiLabel.setText("<html><div style='text-align:center;font-family:Segoe UI Emoji'>\uD83D\uDCCD " + cityName + ", " + country + "</div></html>");
-            tarihLabel.setText(new SimpleDateFormat("dd MMMM yyyy  \u2022  HH:mm", Locale.of("tr")).format(new Date()));
+            sehirBilgiLabel.setText("\uD83D\uDCCD " + cityName + ", " + country);
+            SimpleDateFormat tarihSdf = new SimpleDateFormat("dd MMMM yyyy  \u2022  HH:mm", Locale.of("tr"));
+            tarihSdf.setTimeZone(TimeZone.getTimeZone("GMT" + (tz >= 0 ? "+" : "") + (tz / 3600)));
+            tarihLabel.setText(tarihSdf.format(new Date()));
             durumEmoji.setText(emoji);
             sicaklikLabel.setText(String.format("%.0f\u00B0", temp));
             minMaxLabel.setText(String.format("%.0f\u00B0 / %.0f\u00B0", tMax, tMin));
@@ -1350,6 +1650,41 @@ public class HavaDurumu extends JFrame {
             ruzgarLabel.setText(String.format("%.1f m/s", wind));
             basincLabel.setText(pres + " hPa");
             gorunurlukLabel.setText(String.format("%.1f km", vis / 1000.0));
+
+            // Wind direction
+            int windDeg = pi(json, "\"deg\":");
+            String windDir = degreeToDirection(windDeg);
+            ruzgarYonLabel.setText(windDir + " (" + windDeg + "\u00B0)");
+
+            // Rain probability
+            if (rainProb >= 0) {
+                yagmurLabel.setText("%" + rainProb);
+            } else {
+                yagmurLabel.setText("N/A");
+            }
+
+            // AQI
+            if (aqiValue > 0) {
+                String aqiText = switch (aqiValue) {
+                    case 1 -> "Iyi";
+                    case 2 -> "Orta";
+                    case 3 -> "Hassas";
+                    case 4 -> "Kotu";
+                    case 5 -> "Tehlikeli";
+                    default -> "?";
+                };
+                aqiLabel.setText(aqiText + " (" + aqiValue + ")");
+            } else {
+                aqiLabel.setText("N/A");
+            }
+
+            // Tomorrow forecast
+            if (tomorrowDesc != null && !tomorrowDesc.isEmpty()) {
+                String capDesc = tomorrowDesc.substring(0, 1).toUpperCase(Locale.of("tr")) + tomorrowDesc.substring(1);
+                yarinLabel.setText(String.format("%.0f\u00B0 %s", tomorrowTemp, capDesc));
+            } else {
+                yarinLabel.setText("N/A");
+            }
 
             // Sunrise / Sunset formatting
             SimpleDateFormat sdf = new SimpleDateFormat("HH:mm");
@@ -1368,26 +1703,11 @@ public class HavaDurumu extends JFrame {
                 if (mc.length > 0 && mc[0] instanceof JLabel) ((JLabel)mc[0]).setText(moonPhaseEmoji(mPhase));
             }
 
-            // Day/Night indicator
-            if (night) {
-                uvLabel.setText("Gece");
-                if (extraComps.length >= 4) {
-                    JPanel uvTile = (JPanel) extraComps[3];
-                    Component[] uc = uvTile.getComponents();
-                    if (uc.length > 0 && uc[0] instanceof JLabel) ((JLabel)uc[0]).setText("\uD83C\uDF19");
-                    if (uc.length > 1 && uc[1] instanceof JLabel) ((JLabel)uc[1]).setText("Durum");
-                }
+            // UV Endeksi
+            if (uvIndex >= 0) {
+                uvLabel.setText(String.format("%.1f", uvIndex));
             } else {
-                long dayLen = ss - sr;
-                long h = dayLen / 3600;
-                long m = (dayLen % 3600) / 60;
-                uvLabel.setText(h + "s " + m + "dk");
-                if (extraComps.length >= 4) {
-                    JPanel uvTile = (JPanel) extraComps[3];
-                    Component[] uc = uvTile.getComponents();
-                    if (uc.length > 0 && uc[0] instanceof JLabel) ((JLabel)uc[0]).setText("\u2600\uFE0F");
-                    if (uc.length > 1 && uc[1] instanceof JLabel) ((JLabel)uc[1]).setText("Gun Suresi");
-                }
+                uvLabel.setText("N/A");
             }
 
             revalidate(); repaint();
@@ -1411,6 +1731,13 @@ public class HavaDurumu extends JFrame {
         };
     }
 
+    // ========== WIND DIRECTION ==========
+    private String degreeToDirection(int deg) {
+        String[] dirs = {"K", "KKD", "KD", "DKD", "D", "DGD", "GD", "GGD", "G", "GGB", "GB", "BGB", "B", "BKB", "KB", "KKB"};
+        int idx = (int) Math.round(deg / 22.5) % 16;
+        return dirs[idx];
+    }
+
     // ========== JSON HELPERS ==========
     private double pd(String j, String k) {
         int i = j.indexOf(k); if (i < 0) return 0;
@@ -1427,7 +1754,7 @@ public class HavaDurumu extends JFrame {
 
     private void showError(String msg) {
         titlePanel.setVisible(true);
-        kartPanel.setVisible(true); detayPanel.setVisible(false); extraPanel.setVisible(false);
+        kartPanel.setVisible(true); detayPanel.setVisible(false); detayPanel2.setVisible(false); extraPanel.setVisible(false);
         animateCards();
         sehirBilgiLabel.setText(""); tarihLabel.setText("");
         durumEmoji.setText("\u26A0\uFE0F"); sicaklikLabel.setText("");

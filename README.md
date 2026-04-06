@@ -18,6 +18,8 @@ Turkiye'nin 81 ili ve dunyanin buyuk sehirleri icin anlik hava durumu bilgisi su
 - **Ozel Emoji Rendereri** — Gunes, ay, bulut, yagmur, kar gibi ikonlarin Graphics2D ile vektorel cizimi
 - **Ay Evresi Hesaplama** — Julian takvim algoritmasi ile gercek zamanli ay evresi gosterimi
 - **Sehir Otomatik Tamamlama** — Yazdikca anlik oneriler (yerel liste + OpenWeatherMap Geocoding API)
+- **Hava Kalitesi (AQI) ve UV Endeksi** — Şehre özel hava kalitesi ve ultraviyole endeksi
+- **Yarin Tahmini** — Kısa açıklama ve sıcaklık (OpenWeatherMap forecast API)
 - **Genis Sehir Destegi** — Turkiye'nin 81 ili + 28 dunya metropolu hazir listede
 - **Gun Dogumu / Batimi** — Sehre ozel gunes saatleri ve gun suresi hesabi
 - **Kart Animasyonlari** — Arama sonrasi yumusak fade-in gecisleri
