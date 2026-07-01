@@ -1769,3 +1769,5 @@ private void showGeoSuggestions(List<String> results, JPanel suggestPanel, JText
         SwingUtilities.invokeLater(() -> new HavaDurumu().setVisible(true));
     }
 }
+
+#
